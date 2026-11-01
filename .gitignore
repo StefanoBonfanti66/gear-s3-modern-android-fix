@@ -11,8 +11,14 @@
 /build/
 /dist/
 decompiled/
+decompiled_*/
+*_smali_only/
 *.dex
 *.smali
+
+# Keystores & Tools
+*.keystore
+tools/
 
 # OS & Editor generated files
 .DS_Store
