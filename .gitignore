@@ -1,0 +1,24 @@
+# Git ignore file for Samsung Gear S3 Modern Phone Compatibility Project
+
+# APKs and binaries
+*.apk
+*.xapk
+*.apkm
+*.zip
+*.tar.gz
+
+# Decompilation outputs
+/build/
+/dist/
+decompiled/
+*.dex
+*.smali
+
+# OS & Editor generated files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.bak
+*.log
