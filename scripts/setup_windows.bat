@@ -33,7 +33,9 @@ echo [+] Device detected: %DEVICE_MODEL% (Android SDK: %DEVICE_SDK%)
 echo.
 
 set SCRIPT_DIR=%~dp0
-set APK_DIR=%SCRIPT_DIR%..\apks
+set REPO_DIR=%SCRIPT_DIR%..
+set APK_DIR=%REPO_DIR%\apks
+set DIST_DIR=%REPO_DIR%\dist
 
 if not exist "%APK_DIR%" mkdir "%APK_DIR%"
 
@@ -42,12 +44,14 @@ set GEAR_S_LEGACY_PKG=com.samsung.android.gearsplugin
 set WATCH_MANAGER_PKG=com.samsung.android.app.watchmanager
 set ACCESSORY_PKG=com.samsung.accessory
 
-echo [*] Step 1: Installing APK packages from '%APK_DIR%'...
+echo [*] Step 1: Installing APK packages...
 
-REM Install Accessory Service if found
-for %%f in ("%APK_DIR%\*accessory*.apk") do (
-    echo [*] Installing Accessory Service: %%~nxf
-    adb install -r -d --bypass-low-target-sdk-block "%%f" 2>nul || adb install -r -d "%%f"
+REM Check for modded APKs in dist first
+if exist "%DIST_DIR%\galaxy_wearable_modded.apk" if exist "%DIST_DIR%\gear_s_plugin_modded.apk" (
+    echo [+] Detected patched/modded APKs in dist! Installing modded suite...
+    adb install -r -d --bypass-low-target-sdk-block "%DIST_DIR%\galaxy_wearable_modded.apk" 2>nul || adb install -r -d "%DIST_DIR%\galaxy_wearable_modded.apk"
+    adb install -r -d --bypass-low-target-sdk-block "%DIST_DIR%\gear_s_plugin_modded.apk" 2>nul || adb install -r -d "%DIST_DIR%\gear_s_plugin_modded.apk"
+    goto install_accessory
 )
 
 REM Install Galaxy Wearable if found
@@ -59,6 +63,13 @@ for %%f in ("%APK_DIR%\*watchmanager*.apk" "%APK_DIR%\galaxy_wearable.apk") do (
 REM Install Gear Plugin if found
 for %%f in ("%APK_DIR%\*gear*plugin*.apk" "%APK_DIR%\gear_s_plugin.apk") do (
     echo [*] Installing Gear Plugin: %%~nxf
+    adb install -r -d --bypass-low-target-sdk-block "%%f" 2>nul || adb install -r -d "%%f"
+)
+
+:install_accessory
+REM Install Accessory Service if found
+for %%f in ("%APK_DIR%\*accessory*.apk") do (
+    echo [*] Installing Accessory Service: %%~nxf
     adb install -r -d --bypass-low-target-sdk-block "%%f" 2>nul || adb install -r -d "%%f"
 )
 

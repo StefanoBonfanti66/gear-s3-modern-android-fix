@@ -48,6 +48,7 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 APK_DIR="$REPO_DIR/apks"
+DIST_DIR="$REPO_DIR/dist"
 
 mkdir -p "$APK_DIR"
 
@@ -56,12 +57,20 @@ GEAR_S_LEGACY_PKG="com.samsung.android.gearsplugin"
 WATCH_MANAGER_PKG="com.samsung.android.app.watchmanager"
 ACCESSORY_PKG="com.samsung.accessory"
 
-echo -e "${YELLOW}[*] Step 1: Locating APK packages in '${APK_DIR}'...${NC}"
+echo -e "${YELLOW}[*] Step 1: Locating APK packages...${NC}"
 
-# Smart detection of APK files (matches standard names or original APKMirror names)
-GALAXY_WEARABLE_APK=$(find "$APK_DIR" -maxdepth 1 -name "*watchmanager*.apk" -o -name "galaxy_wearable.apk" | head -n 1)
-GEAR_PLUGIN_APK=$(find "$APK_DIR" -maxdepth 1 -name "*gear*plugin*.apk" -o -name "gear_s_plugin.apk" | head -n 1)
-ACCESSORY_APK=$(find "$APK_DIR" -maxdepth 1 -name "*accessory*.apk" | head -n 1)
+# Check for modded APKs in dist/ first
+if [ -f "$DIST_DIR/galaxy_wearable_modded.apk" ] && [ -f "$DIST_DIR/gear_s_plugin_modded.apk" ]; then
+    echo -e "${GREEN}[+] Detected patched/modded APKs in 'dist/'! Using patched build (zero date trick required).${NC}"
+    GALAXY_WEARABLE_APK="$DIST_DIR/galaxy_wearable_modded.apk"
+    GEAR_PLUGIN_APK="$DIST_DIR/gear_s_plugin_modded.apk"
+else
+    # Smart detection of APK files in apks/
+    GALAXY_WEARABLE_APK=$(find "$APK_DIR" -maxdepth 1 -name "*watchmanager*.apk" -o -name "galaxy_wearable.apk" 2>/dev/null | head -n 1)
+    GEAR_PLUGIN_APK=$(find "$APK_DIR" -maxdepth 1 -name "*gear*plugin*.apk" -o -name "gear_s_plugin.apk" 2>/dev/null | head -n 1)
+fi
+
+ACCESSORY_APK=$(find "$APK_DIR" -maxdepth 1 -name "*accessory*.apk" 2>/dev/null | head -n 1)
 
 if [ -n "$GALAXY_WEARABLE_APK" ]; then
     echo -e "${GREEN}[+] Found Galaxy Wearable APK:${NC} $(basename "$GALAXY_WEARABLE_APK")"
