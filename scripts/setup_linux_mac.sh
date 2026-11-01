@@ -51,54 +51,59 @@ APK_DIR="$REPO_DIR/apks"
 
 mkdir -p "$APK_DIR"
 
-GEAR_PLUGIN_PKG="com.samsung.android.gearsplugin"
+GEAR_PLUGIN_PKG="com.samsung.android.gearoplugin"
+GEAR_S_LEGACY_PKG="com.samsung.android.gearsplugin"
 WATCH_MANAGER_PKG="com.samsung.android.app.watchmanager"
 ACCESSORY_PKG="com.samsung.accessory"
 
-echo -e "${YELLOW}[*] Step 1: Checking APK packages in '${APK_DIR}'...${NC}"
-echo "Required files:"
-echo " - gear_s_plugin.apk (Gear S Plugin v2.2.03.23121551 or compatible)"
-echo " - galaxy_wearable.apk (Galaxy Wearable v2.2.57.23102461 or compatible)"
-echo ""
+echo -e "${YELLOW}[*] Step 1: Locating APK packages in '${APK_DIR}'...${NC}"
 
-MISSING=0
-if [ ! -f "$APK_DIR/gear_s_plugin.apk" ]; then
-    echo -e "${YELLOW}[!] Missing: $APK_DIR/gear_s_plugin.apk${NC}"
-    MISSING=1
+# Smart detection of APK files (matches standard names or original APKMirror names)
+GALAXY_WEARABLE_APK=$(find "$APK_DIR" -maxdepth 1 -name "*watchmanager*.apk" -o -name "galaxy_wearable.apk" | head -n 1)
+GEAR_PLUGIN_APK=$(find "$APK_DIR" -maxdepth 1 -name "*gear*plugin*.apk" -o -name "gear_s_plugin.apk" | head -n 1)
+ACCESSORY_APK=$(find "$APK_DIR" -maxdepth 1 -name "*accessory*.apk" | head -n 1)
+
+if [ -n "$GALAXY_WEARABLE_APK" ]; then
+    echo -e "${GREEN}[+] Found Galaxy Wearable APK:${NC} $(basename "$GALAXY_WEARABLE_APK")"
+else
+    echo -e "${YELLOW}[!] Missing Galaxy Wearable APK in $APK_DIR${NC}"
 fi
 
-if [ ! -f "$APK_DIR/galaxy_wearable.apk" ]; then
-    echo -e "${YELLOW}[!] Missing: $APK_DIR/galaxy_wearable.apk${NC}"
-    MISSING=1
+if [ -n "$GEAR_PLUGIN_APK" ]; then
+    echo -e "${GREEN}[+] Found Gear Plugin APK:${NC} $(basename "$GEAR_PLUGIN_APK")"
+else
+    echo -e "${YELLOW}[!] Missing Gear S Plugin APK in $APK_DIR${NC}"
 fi
 
-if [ "$MISSING" -eq 1 ]; then
+if [ -n "$ACCESSORY_APK" ]; then
+    echo -e "${GREEN}[+] Found Accessory Service APK:${NC} $(basename "$ACCESSORY_APK")"
+fi
+
+if [ -z "$GALAXY_WEARABLE_APK" ] || [ -z "$GEAR_PLUGIN_APK" ]; then
     echo ""
-    echo -e "${YELLOW}Please download the verified late-2023 APKs from a trusted repository (e.g. APKMirror):${NC}"
-    echo -e "  1. Gear S Plugin:       https://www.apkmirror.com/apk/samsung-electronics-co-ltd/gear-s-plugin/"
-    echo -e "  2. Galaxy Wearable:    https://www.apkmirror.com/apk/samsung-electronics-co-ltd/samsung-gear/"
-    echo ""
-    echo "Place the files in '$APK_DIR' with the filenames:"
-    echo "  - gear_s_plugin.apk"
-    echo "  - galaxy_wearable.apk"
-    echo ""
+    echo -e "${YELLOW}Please ensure the late-2023 APKs are in '$APK_DIR'.${NC}"
     read -rp "Press [Enter] to continue if already installed or when APKs are placed in folder..."
 fi
 
 # 3. Install APKs if present
-if [ -f "$APK_DIR/galaxy_wearable.apk" ]; then
-    echo -e "${BLUE}[*] Installing Galaxy Wearable...${NC}"
-    adb install -r -d --bypass-low-target-sdk-block "$APK_DIR/galaxy_wearable.apk" 2>/dev/null || adb install -r -d "$APK_DIR/galaxy_wearable.apk"
+if [ -n "$ACCESSORY_APK" ]; then
+    echo -e "${BLUE}[*] Installing Samsung Accessory Service...${NC}"
+    adb install -r -d --bypass-low-target-sdk-block "$ACCESSORY_APK" 2>/dev/null || adb install -r -d "$ACCESSORY_APK" || true
 fi
 
-if [ -f "$APK_DIR/gear_s_plugin.apk" ]; then
+if [ -n "$GALAXY_WEARABLE_APK" ]; then
+    echo -e "${BLUE}[*] Installing Galaxy Wearable...${NC}"
+    adb install -r -d --bypass-low-target-sdk-block "$GALAXY_WEARABLE_APK" 2>/dev/null || adb install -r -d "$GALAXY_WEARABLE_APK" || true
+fi
+
+if [ -n "$GEAR_PLUGIN_APK" ]; then
     echo -e "${BLUE}[*] Installing Gear S Plugin...${NC}"
-    adb install -r -d --bypass-low-target-sdk-block "$APK_DIR/gear_s_plugin.apk" 2>/dev/null || adb install -r -d "$APK_DIR/gear_s_plugin.apk"
+    adb install -r -d --bypass-low-target-sdk-block "$GEAR_PLUGIN_APK" 2>/dev/null || adb install -r -d "$GEAR_PLUGIN_APK" || true
 fi
 
 # 4. Grant Runtime Permissions via ADB
 echo ""
-echo -e "${BLUE}[*] Step 2: Granting runtime permissions to Gear S Plugin...${NC}"
+echo -e "${BLUE}[*] Step 2: Granting runtime permissions to Gear Plugin...${NC}"
 
 PERMISSIONS=(
     "android.permission.BLUETOOTH_CONNECT"
@@ -124,24 +129,27 @@ PERMISSIONS=(
     "android.permission.ACTIVITY_RECOGNITION"
 )
 
-for perm in "${PERMISSIONS[@]}"; do
-    adb shell pm grant "$GEAR_PLUGIN_PKG" "$perm" 2>/dev/null || true
+for pkg in "$GEAR_PLUGIN_PKG" "$GEAR_S_LEGACY_PKG"; do
+    for perm in "${PERMISSIONS[@]}"; do
+        adb shell pm grant "$pkg" "$perm" 2>/dev/null || true
+    done
 done
-echo -e "${GREEN}[+] Gear S Plugin permissions configured.${NC}"
+echo -e "${GREEN}[+] Gear Plugin permissions configured.${NC}"
 
 # 5. Bypass Android 13/14 Restricted Settings
 echo ""
 echo -e "${BLUE}[*] Step 3: Enabling Restricted Settings (AppOps) for sideloaded packages...${NC}"
-adb shell appops set "$GEAR_PLUGIN_PKG" ACCESS_RESTRICTED_SETTINGS allow 2>/dev/null || true
-adb shell appops set "$WATCH_MANAGER_PKG" ACCESS_RESTRICTED_SETTINGS allow 2>/dev/null || true
+for pkg in "$GEAR_PLUGIN_PKG" "$GEAR_S_LEGACY_PKG" "$WATCH_MANAGER_PKG"; do
+    adb shell appops set "$pkg" ACCESS_RESTRICTED_SETTINGS allow 2>/dev/null || true
+done
 echo -e "${GREEN}[+] Restricted settings permitted.${NC}"
 
 # 6. Whitelist from Battery Optimization / Doze
 echo ""
 echo -e "${BLUE}[*] Step 4: Disabling aggressive battery optimizations (Doze whitelist)...${NC}"
-adb shell dumpsys deviceidle whitelist +"$GEAR_PLUGIN_PKG" 2>/dev/null || true
-adb shell dumpsys deviceidle whitelist +"$WATCH_MANAGER_PKG" 2>/dev/null || true
-adb shell dumpsys deviceidle whitelist +"$ACCESSORY_PKG" 2>/dev/null || true
+for pkg in "$GEAR_PLUGIN_PKG" "$GEAR_S_LEGACY_PKG" "$WATCH_MANAGER_PKG" "$ACCESSORY_PKG"; do
+    adb shell dumpsys deviceidle whitelist +"$pkg" 2>/dev/null || true
+done
 echo -e "${GREEN}[+] Battery optimization whitelisted.${NC}"
 
 # 7. Final Pairing Instructions
