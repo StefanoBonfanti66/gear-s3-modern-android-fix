@@ -29,9 +29,20 @@ invoke-interface {v0, v2, v1}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang
 ```
 
 Samsung explicitly hardcoded:
-* `maxSdkVersion = 0x22` (34, Android 14)
+* `0x22` (34, Android 14): see the correction below, this is **`eosStartSdkVersion`**
 * `eosYear = 0x7e8` (2024)
 * `productLaunchYear = 0x7de` (2014-2016)
+
+> **Correction (verified in Galaxy Wearable 2.2.57.23102461):** the call is to the Kotlin synthetic constructor
+> `WearableDeviceRule.<init>(..., int mask, DefaultConstructorMarker)` with default mask `0x3bfcf4`.
+> Mapping the registers to parameters gives `v38` = parameter 9 = **`eosStartSdkVersion` = 34** and `v39` = parameter 10 = **`eosYear` = 2024**.
+> `maxSdkVersion` (parameter 8) has its mask bit set, so it uses the default **`0x3e8` = 1000** (no limit).
+> `supportNonSamsung` (parameter 6) also uses the default: **`true`**.
+>
+> `eosStartSdkVersion` is read in exactly one place: `l3/a.p(String)`, called by `PlatformUtils.isEOSPackage()`, which
+> `UpdateDownLoadURLTask` uses to refuse **downloading** the plugin (`DOWNLOAD_FAIL_BY_EOS_PACKAGE`).
+> `eosYear` is only formatted into a dialog string (`HMConnectFragment`).
+> So with this Galaxy Wearable version, `isNotSupportedOSVersionOverMax()` is `false` on Android 16, and pairing isn't blocked as long as the Gear S Plugin is already installed.
 
 ### B. The Runtime Check: `WearableDevice.smali` & `RuleUtil$Companion.smali`
 When pairing starts, `WearableDevice.smali` verifies if the current phone's Android SDK exceeds `maxSdkVersion`:
@@ -101,3 +112,57 @@ To bypass this check permanently without requiring clock manipulations:
        return-void
    .end method
    ```
+
+
+---
+
+## 4. Root cause of the "Finishing pairing" hang: Samsung Accessory Service
+
+Tested November 2026: Gear S3 Frontier (SM-R760) + Xiaomi 15, Android 16. With the Galaxy Wearable / Gear S Plugin versions above, pairing still hung forever on **"Finishing pairing"** (last dot animating, no error). `adb logcat` showed:
+
+1. The SAP connection and the JSON handshake complete normally (`mgr_watch_info`, `mgr_wearable_status`, `mgr_status_exchange_done`, `mgr_wearable_ready_for_restore_res`).
+2. The watch then pushes `full_resource.zip` and `rsrc-default_001.zip` through the SAP file transfer profile (`/system/filetransfer`).
+3. **Samsung Accessory Service 3.1.96.61123** rejects each transfer:
+   ```
+   SAServiceNativeV2: getAgentDetails(): com.samsung.accessory does not own agentId <id>
+   FTConsumerImpl: tid:1[null] null
+   FTConsumerImpl: SASP_ERROR: Package name not found. Rejecting transfer
+   ```
+
+### Why
+`FTConsumerImpl.handleSetupRequest()` (inside `com.samsung.accessory`) resolves the destination agent with
+`SAManagerAgent.getAgentPackagename(peerId)` -> `getAgentDetails()` -> framework `SAServiceNativeV2.getAgentDetails(long, String)`.
+
+In 3.1.96.61123 that framework method contains:
+```smali
+invoke-static {p2, p1}, Lcom/samsung/accessory/platform/SAPlatformUtils;->isPackageNameRight(Ljava/lang/String;I)Z
+...
+invoke-static {p3, p1}, Lcom/samsung/accessory/platform/SAPlatformUtils;->isAgentOwnedBy(Ljava/lang/String;Ljava/lang/String;)Z
+if-nez p1, :cond_0
+    # "<caller> does not own agentId <id>" -> returns an EMPTY Bundle
+```
+The caller is Accessory Service's own file-transfer consumer (`com.samsung.accessory`), but the target agent
+(`HMSAPProviderService`) belongs to `com.samsung.android.gearoplugin`. So the ownership check fails, the bundle has no
+`packageName`, and the transfer is rejected.
+
+In **3.1.96.41110** the same method only calls `isPackageNameRight(String)` and then `getAgentDetails()`, with no ownership check.
+With it the transfer is routed correctly:
+```
+FTConsumerImpl: tid:6[com.samsung.android.gearoplugin] com.samsung.android.hostmanager.service.HMSAPProviderService
+SAFTManager: onFileRequest [com.samsung.android.gearoplugin] peerId:<id>
+```
+
+### Why that freezes the setup UI
+In Gear S Plugin 2.2.03.23121541N, `SetupWizardConnectFragment$2.onReceive()`:
+* on `SAPCONNECT` (Ready_For_Restore): proceeds **only if `getIsEulaPassed()` is true**, which isn't the case on a first setup;
+* on `MGR_APPS_ICON_RES` (broadcast after the resources/icons from the watch are processed): calls `setView(3002)`.
+
+`setView(3002)` posts `launchNextActivity()` after 3 s, which opens `launchOOBETermsAndCondition` when the EULA isn't passed yet.
+Because the resources never arrive, `MGR_APPS_ICON_RES` never fires and the screen waits forever.
+
+### Fix
+Install Samsung Accessory Service **3.1.96.41110** (Samsung-signed, same certificate as the rest of the shared UID), pair, then optionally update again.
+After first-time setup the Gear S3 keeps working with Accessory Service 3.1.96.61123 + Galaxy Wearable 2.2.72.26092361 (notifications tested).
+Features that rely on SAP file transfer (sending watch faces/apps from the phone, media sync) weren't tested on 3.1.96.61123 and may fail.
+
+Log excerpts: [evidence/](evidence/).

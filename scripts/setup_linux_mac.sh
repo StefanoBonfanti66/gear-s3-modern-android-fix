@@ -97,7 +97,12 @@ fi
 # 3. Install APKs if present
 if [ -n "$ACCESSORY_APK" ]; then
     echo -e "${BLUE}[*] Installing Samsung Accessory Service...${NC}"
+    echo -e "${YELLOW}[!] Use v3.1.96.41110 for first-time pairing. v3.1.96.61123 rejects the watch's setup file transfer${NC}"
+    echo -e "${YELLOW}    ('does not own agentId' / 'Package name not found') and pairing hangs on 'Finishing pairing'.${NC}"
+    # A downgrade can't be installed over a newer version, so remove the installed one first.
+    adb uninstall "$ACCESSORY_PKG" >/dev/null 2>&1 || true
     adb install -r -d --bypass-low-target-sdk-block "$ACCESSORY_APK" 2>/dev/null || adb install -r -d "$ACCESSORY_APK" || true
+    echo -e "${GREEN}[+] Installed:${NC} $(adb shell dumpsys package "$ACCESSORY_PKG" | grep -m1 versionName | tr -d ' ')"
 fi
 
 if [ -n "$GALAXY_WEARABLE_APK" ]; then
@@ -172,6 +177,8 @@ echo " 1. Turn ON 'Airplane Mode' on your phone, then turn ON Bluetooth only."
 echo " 2. (If the app forces an update): Temporarily change your phone's date to December 2023."
 echo " 3. Put your Gear S3 in pairing mode (or factory reset it if needed)."
 echo " 4. Open Galaxy Wearable on your phone and complete pairing."
-echo " 5. Once the watch face appears, restore Automatic Date and disable Airplane Mode."
+echo " 5. Before the Samsung account / Reactivation lock step, restore Automatic Date and disable
+    Airplane Mode (the sign-in page fails with a fake date).
+ 6. After setup you can update all apps again; only re-pairing needs Accessory Service 3.1.96.41110."
 echo ""
 echo -e "${CYAN}Enjoy your Gear S3!${NC}"

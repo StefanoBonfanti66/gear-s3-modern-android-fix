@@ -1,0 +1,12 @@
+# Samsung Accessory Service 3.1.96.61123 - first-time pairing, stuck on "Finishing pairing"
+# (timestamps, process ids and device identifiers removed)
+FTConsumerImpl: handleSetupRequest:full_resource.zip
+SAServiceNativeV2: getAgentDetails(): com.samsung.accessory does not own agentId <id>
+FTConsumerImpl: tid:1[null] null
+FTConsumerImpl: SASP_ERROR: Package name not found. Rejecting transfer
+FTConsumerImpl: confirmRequest: user rejected
+(the same rejection repeats for rsrc-default_001.zip and every retry of full_resource.zip)
+SetupWizardConnectFragment: CM::HMConnectActivity - receive Ready_For_Restore ...
+HostManager: uu::getIsEulaPassed()= false
+SetupWizardConnectFragment: startDotColorAnimation()
+(nothing further: MGR_APPS_ICON_RES never arrives, Terms & Conditions never opens)

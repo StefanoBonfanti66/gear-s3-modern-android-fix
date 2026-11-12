@@ -70,6 +70,8 @@ for %%f in ("%APK_DIR%\*gear*plugin*.apk" "%APK_DIR%\gear_s_plugin.apk") do (
 REM Install Accessory Service if found
 for %%f in ("%APK_DIR%\*accessory*.apk") do (
     echo [*] Installing Accessory Service: %%~nxf
+    echo [!] Use v3.1.96.41110 for first-time pairing - v3.1.96.61123 makes pairing hang on "Finishing pairing".
+    adb uninstall %ACCESSORY_PKG% >nul 2>&1
     adb install -r -d --bypass-low-target-sdk-block "%%f" 2>nul || adb install -r -d "%%f"
 )
 

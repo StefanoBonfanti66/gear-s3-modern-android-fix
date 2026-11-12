@@ -24,6 +24,40 @@ This repository provides **automated scripts** and **decompiled Smali patches** 
 
 ---
 
+## ✅ Confirmed root cause: stuck on "Finishing pairing" (Samsung Accessory Service)
+
+Tested November 2026 on a **Gear S3 Frontier (SM-R760)** with a **Xiaomi 15, Android 16 (HyperOS)**:
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Pairing hangs forever on **"Finishing pairing"** (last dot keeps animating, no error) | **Samsung Accessory Service 3.1.96.61123** rejects the resource file the watch sends during first-time setup | Pair once with **Samsung Accessory Service 3.1.96.41110**, then update everything again |
+
+What happens (from `adb logcat` + decompiled code):
+1. Bluetooth/SAP connection and the JSON handshake complete normally.
+2. During first-time setup the watch sends `full_resource.zip` / `rsrc-default_001.zip` over SAP file transfer.
+3. Accessory Service 3.1.96.61123 added an ownership check (`SAPlatformUtils.isAgentOwnedBy`) in
+   `SAServiceNativeV2.getAgentDetails()`. Its own built-in file-transfer receiver can't look up the Gear S Plugin's agent anymore, so it rejects the transfer:
+   ```
+   SAServiceNativeV2: getAgentDetails(): com.samsung.accessory does not own agentId <id>
+   FTConsumerImpl: SASP_ERROR: Package name not found. Rejecting transfer
+   ```
+4. Before the EULA is accepted, the Gear S Plugin (`SetupWizardConnectFragment`) waits for `MGR_APPS_ICON_RES`, which only fires after those resources arrive, so the Terms & Conditions screen never opens.
+5. **3.1.96.41110** doesn't have that check: the transfer goes through and setup continues.
+
+See [docs/evidence/](docs/evidence/) for the relevant log lines and [docs/technical_analysis.md](docs/technical_analysis.md#4-root-cause-of-the-finishing-pairing-hang-samsung-accessory-service) for details.
+
+**After setup is done** you can update Galaxy Wearable and Accessory Service to the latest versions again: the watch stays connected and notifications keep working (tested with Galaxy Wearable 2.2.72.26092361 + Accessory Service 3.1.96.61123). That means newer Galaxy watches on the same phone keep working too. Only downgrade again if you reset or re-pair the Gear S3.
+
+All APKs used are **unmodified, Samsung-signed** (certificate SHA-256 `34df0e7a9f1cf1892e45c056b4973cd81ccf148a4050d11aea4ac5a65f900a42`, check with `apksigner verify --print-certs`):
+
+| App | Package | Version that worked | SHA-256 of the APK used |
+|---|---|---|---|
+| Samsung Accessory Service | `com.samsung.accessory` | **3.1.96.41110** | `dc2f2a6edfbe87d0fa46ae47e355cb9ffce8f23d233baa9d2fffc68404b572d5` |
+| Galaxy Wearable | `com.samsung.android.app.watchmanager` | 2.2.57.23102461 | `4bb986ebb10255ceb64ecd2d240b8ddd4c66682aacba5a7c1b9a4a826df92f48` |
+| Gear S Plugin | `com.samsung.android.gearoplugin` | 2.2.03.23121541N | `15270bf53dad76573ac5033189793cd4317b6c1cf8bf0b4923ad861c06b7bf4e` |
+
+---
+
 ## 🚀 Two Methods to Fix
 
 ### Method A: Automated ADB Provisioning (Recommended)
@@ -62,10 +96,11 @@ If you don't have a PC available:
 2. **Download** the verified late-2023 APK releases (e.g. from APKMirror):
    - *Galaxy Wearable*: `v2.2.57.23102461`
    - *Gear S Plugin*: `v2.2.03.23121551` (or `v2.2.03.23112251`)
-   - *Samsung Accessory Service*: Latest from store.
+   - *Samsung Accessory Service*: **`v3.1.96.41110`**. ⚠️ Not the latest: 3.1.96.61123 makes pairing hang on "Finishing pairing" (see above). Uninstall the current one first, since a downgrade can't be installed over it.
 3. **Enable Airplane Mode** on your phone, then turn **Bluetooth ON**.
 4. **Change Date**: Temporarily set your phone's date to **December 2023** (Settings > General Management > Date and Time > Turn off Automatic date).
 5. **Install the APKs** in order:
+   - Install `Samsung Accessory Service 3.1.96.41110`.
    - Install `Galaxy Wearable` (do not open yet).
    - Install `Gear S Plugin`.
 6. **Enable Restricted Settings (Android 14)**:
@@ -73,7 +108,8 @@ If you don't have a PC available:
    - Do the same for `Gear S Plugin`.
    - Manually grant all permissions.
 7. **Pair the Watch**: Open Galaxy Wearable and complete setup.
-8. **Restore Settings**: Once you see the watch face, restore **Automatic Date** and disable Airplane Mode.
+8. **Restore Settings**: When the setup asks for a **Samsung account / Reactivation lock**, first restore **Automatic Date** and disable Airplane Mode. With a fake 2023 date the sign-in page can't load (TLS certificates aren't valid yet). With Galaxy Wearable 2.2.57 the fake date probably isn't needed at all.
+9. **Optional:** once setup is complete you can update all apps to the latest versions again (see the root cause section above).
 
 ---
 
@@ -82,7 +118,8 @@ If you don't have a PC available:
 For developers who want permanent compatibility without changing dates or using airplane mode, we analyzed and patched the decompiled bytecode directly.
 
 ### The "Smoking Gun" in Smali:
-* **`l3/a.smali`**: Defines `WearableDeviceRule` where `maxSdkVersion = 0x22` (34, Android 14) and `eosYear = 0x7e8` (2024).
+* **`l3/a.smali`**: Defines the Gear S/S2/S3/Sport `WearableDeviceRule` with `0x22` (34, Android 14) and `eosYear = 0x7e8` (2024).
+  ⚠️ **Correction (verified in Galaxy Wearable 2.2.57.23102461):** `0x22` is the 9th constructor argument, **`eosStartSdkVersion`**, not `maxSdkVersion`. `maxSdkVersion` uses the default (bitmask `0x3bfcf4`), which is **1000** (no limit), and `supportNonSamsung` defaults to `true`. `eosStartSdkVersion` is only used by `PlatformUtils.isEOSPackage()`, which blocks *downloading* the plugin from within the app; it doesn't block pairing if the plugin is already installed. `PairingProblemChecker` passes on Android 16 with this version, so the smali patches below aren't needed for it. They may still be relevant for newer Galaxy Wearable builds.
 * **`WearableDevice.smali`**: Checks if `Build.VERSION.SDK_INT > maxSdkVersion`, throwing `UNSUPPORTED_OS_VERSION_OVER_MAX` (`0x7f110112`: *"This watch is not supported on this phone"*).
 * **`HMRootActivity.smali`**: Calls `showEOSDialog()` displaying `popup_end_of_service_message`.
 
@@ -91,6 +128,7 @@ For developers who want permanent compatibility without changing dates or using 
 2. `RuleUtil.isNotSupportedOSVersion()` -> Returns unconditional `false` (`0x0`).
 3. `HMRootActivity.showEOSDialog()` & `HMFindMyWearableActivity.showEOSDialog()` -> Patched with immediate `return-void`.
 4. Both APKs re-signed with a unified certificate (`gear_s3_custom.keystore`) matching `android:sharedUserId="com.samsung.accessory.wmanager"`.
+   ⚠️ Galaxy Wearable, Gear S Plugin **and Samsung Accessory Service** all share `sharedUserId="com.samsung.accessory.wmanager"`, and Galaxy Wearable declares signature-level permissions (e.g. `com.samsung.android.app.watchmanager.permission.GALAXY_WEARABLE_PLUGIN`). A re-signed APK can't be installed next to Samsung-signed members of that shared UID (Android rejects the signature mismatch), so you'd have to re-sign all of them, and they'd stop receiving updates. The Accessory Service downgrade above avoids patching completely.
 
 See [docs/technical_analysis.md](docs/technical_analysis.md) for full Smali diffs and detailed analysis.
 
@@ -112,10 +150,7 @@ After successful pairing, prevent automatic store updates from breaking your set
 
 ## 🆘 Standalone Mode (Emergency Watch Use)
 
-If you factory reset the Gear S3 and don't have a phone available:
-1. On the initial pairing screen (watch icon on display), **tap the watch icon 3-5 times** repeatedly (or rotate the bezel while holding the screen).
-2. The watch will launch the hidden **Standalone Setup Wizard**.
-3. You can use the watch completely offline without a companion phone.
+> ⚠️ Unverified: the hidden "tap the watch icon 3-5 times" standalone setup wizard couldn't be confirmed. Treat it as a rumor until someone confirms it on a real device.
 
 ---
 
@@ -130,6 +165,7 @@ gear-s3-modern-android-fix/
 ├── dist/                          # Target directory for patched/modded APKs
 ├── docs/
 │   ├── technical_analysis.md      # Deep Smali & SAP architectural analysis
+│   ├── evidence/                  # Log excerpts: failing vs. working Accessory Service
 │   └── permissions_list.md        # Comprehensive permission & AppOps command reference
 └── scripts/
     ├── setup_linux_mac.sh         # Linux / macOS automated ADB provisioner

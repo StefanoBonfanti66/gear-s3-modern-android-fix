@@ -1,0 +1,12 @@
+# Samsung Accessory Service 3.1.96.41110 - first-time pairing succeeds
+# (timestamps, process ids and device identifiers removed)
+FTConsumerImpl: handleSetupRequest:full_resource.zip
+FTConsumerImpl: tid:<n>[com.samsung.android.gearoplugin] com.samsung.android.hostmanager.service.HMSAPProviderService
+SAFTManager: onFileRequest [com.samsung.android.gearoplugin] peerId:<id>
+FTConsumerImpl: RX on CH 101   (file data arriving, ~1 minute)
+SetupWizardConnectFragment: CM::mReceiver.onReceive() action : MGR_APPS_ICON_RES
+SetupWizardConnectFragment: setView()::mode = 3002
+SetupWizardConnectFragment: launchNextActivity()
+HostManager: uu::getIsEulaPassed()= false
+SetupWizardConnectFragment: launchOOBETermsAndCondition
+OOB:SetupWizardTncFragment: initMode() starts
