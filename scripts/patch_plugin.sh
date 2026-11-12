@@ -41,7 +41,7 @@ apktool d "$INPUT_APK" -o "$WORK_DIR" -f
 
 echo ""
 echo -e "${CYAN}[*] Searching for device support and compatibility check classes...${NC}"
-grep -rnE "(isSupportDevice|DeviceSupport|isSupportedHost|ro\.product\.model)" "$WORK_DIR/smali" 2>/dev/null | head -n 25 || true
+grep -rnE "(isNotSupportedOSVersion|isEOSPackage|getEosStartSdkVersion|getMaxSdkVersion|showEOSDialog)" "$WORK_DIR"/smali* 2>/dev/null | head -n 25 || true
 
 echo ""
 echo -e "${YELLOW}[!] Ready for manual/automated Smali patching in '$WORK_DIR'.${NC}"
@@ -49,11 +49,21 @@ echo "    Key targets:"
 echo "    - Return 'const/4 v0, 0x1' on device capability and model validation methods."
 echo "    - Bypass targetSdkVersion checks in AndroidManifest.xml if modifying manifest."
 echo ""
+echo -e "${YELLOW}[!] Note: re-signed APKs can't coexist with Samsung-signed apps in the shared UID com.samsung.accessory.wmanager.${NC}"
+echo "    For first-time pairing problems, try Samsung Accessory Service 3.1.96.41110 first (no patching needed)."
 read -rp "Press [Enter] when edits are finished to recompile and sign..."
 
 mkdir -p dist
 echo -e "${GREEN}[*] Building APK into $OUTPUT_APK...${NC}"
 apktool b "$WORK_DIR" -o "$OUTPUT_APK"
+
+# Android 11+ refuses APKs whose resources.arsc isn't uncompressed and 4-byte aligned.
+if command -v zipalign &> /dev/null; then
+    echo -e "${GREEN}[*] zipalign...${NC}"
+    zipalign -f -p 4 "$OUTPUT_APK" "${OUTPUT_APK%.apk}_aligned.apk" && mv "${OUTPUT_APK%.apk}_aligned.apk" "$OUTPUT_APK"
+else
+    echo -e "${YELLOW}[!] zipalign not found (Android build-tools). Unaligned APKs fail to install on Android 11+.${NC}"
+fi
 
 echo -e "${GREEN}[*] Checking for signing tools (apksigner / jarsigner / uber-apk-signer)...${NC}"
 KEYSTORE="debug.keystore"
